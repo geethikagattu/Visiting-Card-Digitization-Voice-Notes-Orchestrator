@@ -173,6 +173,40 @@ def test_check_duplicate_scans_values_when_headers_are_missing(monkeypatch):
     assert result["matched_field"] == "phone"
 
 
+def test_check_duplicate_matches_name_and_company_when_contact_fields_are_missing(monkeypatch):
+    class FakeSheet:
+        def get(self, pad_values=False):
+            assert pad_values is True
+            return [
+                ["Name", "Phone", "Email", "Company", "Audio URL", "Transcript"],
+                ["Ada Lovelace", "", "", "Analytical Engines", "", ""],
+            ]
+
+    class FakeClient:
+        def open_by_key(self, sheet_id):
+            return SimpleNamespace(sheet1=FakeSheet())
+
+    monkeypatch.setattr(tools, "google_service_account_info", lambda: {})
+    monkeypatch.setattr(tools.settings, "SHEET_ID", "sheet-id")
+    monkeypatch.setattr(
+        "google.oauth2.service_account.Credentials.from_service_account_info",
+        lambda *args, **kwargs: object(),
+    )
+    monkeypatch.setattr("gspread.authorize", lambda creds: FakeClient())
+
+    result = tools.check_duplicate.invoke(
+        {
+            "email": "",
+            "phone": "",
+            "name": "Ada Lovelace",
+            "company": "Analytical Engines",
+        }
+    )
+
+    assert result["is_duplicate"] is True
+    assert result["matched_field"] == "name_company"
+
+
 def test_first_contact_value_skips_empty_list_items():
     assert tools.first_contact_value(["", None, "+123-456-7890"]) == "+123-456-7890"
 

@@ -207,6 +207,15 @@ def row_has_duplicate_value(row_values: list[Any], norm_email: str, norm_phone_s
     return ""
 
 
+def name_company_match(row: dict, norm_name: str, norm_company: str) -> bool:
+    """Return True when a row has the same normalized name and company."""
+    if not norm_name or not norm_company:
+        return False
+    row_name = normalize(row_value(row, "Name", "Full Name", "Contact Name"))
+    row_company = normalize(row_value(row, "Company", "Organization", "Organisation"))
+    return bool(row_name and row_company and row_name == norm_name and row_company == norm_company)
+
+
 @tool
 def extract_card_details(image_path: str) -> dict:
     """Extract Name, Phone, Email, Company from a visiting card image.
@@ -259,7 +268,7 @@ def extract_card_details(image_path: str) -> dict:
 
 
 @tool
-def check_duplicate(email: Any = "", phone: Any = "") -> dict:
+def check_duplicate(email: Any = "", phone: Any = "", name: Any = "", company: Any = "") -> dict:
     """Check Google Sheet for existing contact by email or phone.
     
     Deduplication logic: normalize both email and phone (last 10 digits for phone),
@@ -268,6 +277,8 @@ def check_duplicate(email: Any = "", phone: Any = "") -> dict:
     Args:
         email: Email address to check (may be empty or a list).
         phone: Phone number to check (may be empty or a list).
+        name: Contact name to use as a fallback match.
+        company: Company name to use as a fallback match.
         
     Returns:
         dict with: is_duplicate (bool), row_index (int or None), matched_field (str or None).
@@ -289,9 +300,13 @@ def check_duplicate(email: Any = "", phone: Any = "") -> dict:
         # Normalize inputs
         email_value = first_contact_value(email)
         phone_value = first_contact_value(phone)
+        name_value = first_contact_value(name)
+        company_value = first_contact_value(company)
         norm_email = normalize_email(email_value) if email_value else ""
         norm_phone = phone_digits(phone_value)
         norm_phone_suffix = norm_phone[-10:] if norm_phone else ""
+        norm_name = normalize(name_value) if name_value else ""
+        norm_company = normalize(company_value) if company_value else ""
         
         # Iterate rows and check for duplicates
         rows = sheet_records(sheet)
@@ -307,6 +322,13 @@ def check_duplicate(email: Any = "", phone: Any = "") -> dict:
                     "is_duplicate": True,
                     "row_index": idx,
                     "matched_field": "email" if norm_email and norm_email == row_email else "phone",
+                    "existing_row": row,
+                }
+            if name_company_match(row, norm_name, norm_company):
+                return {
+                    "is_duplicate": True,
+                    "row_index": idx,
+                    "matched_field": "name_company",
                     "existing_row": row,
                 }
 

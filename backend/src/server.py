@@ -226,7 +226,12 @@ async def upload_image(session_id: str, image: UploadFile = File(...)):
             )
 
         duplicate = check_duplicate.invoke(
-            {"email": card_data.get("email") or "", "phone": card_data.get("phone") or ""}
+            {
+                "email": card_data.get("email") or "",
+                "phone": card_data.get("phone") or "",
+                "name": card_data.get("name") or "",
+                "company": card_data.get("company") or "",
+            }
         )
         if "error" in duplicate:
             raise HTTPException(status_code=502, detail=tool_error_detail(duplicate))
