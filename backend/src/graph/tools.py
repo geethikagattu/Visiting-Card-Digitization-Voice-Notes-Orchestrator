@@ -185,10 +185,17 @@ def media_mime_type(path: str) -> str:
 def google_service_account_info() -> dict:
     """Load service-account credentials from a file or legacy inline JSON."""
     if settings.GOOGLE_SA_JSON_FILE:
-        return json.loads(Path(settings.GOOGLE_SA_JSON_FILE).read_text(encoding="utf-8"))
+        service_account_path = Path(settings.GOOGLE_SA_JSON_FILE)
+        if service_account_path.exists():
+            return json.loads(service_account_path.read_text(encoding="utf-8"))
     if settings.GOOGLE_SA_JSON:
         return json.loads(settings.GOOGLE_SA_JSON)
-    raise ValueError("Set GOOGLE_SA_JSON_FILE in backend/.env")
+    if settings.GOOGLE_SA_JSON_FILE:
+        raise ValueError(
+            f"GOOGLE_SA_JSON_FILE does not exist: {settings.GOOGLE_SA_JSON_FILE}. "
+            "Set GOOGLE_SA_JSON instead for deployed environments."
+        )
+    raise ValueError("Set GOOGLE_SA_JSON or GOOGLE_SA_JSON_FILE in backend/.env")
 
 
 def sheet_records(sheet) -> list[dict]:

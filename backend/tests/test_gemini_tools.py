@@ -207,6 +207,15 @@ def test_check_duplicate_matches_name_and_company_when_contact_fields_are_missin
     assert result["matched_field"] == "name_company"
 
 
+def test_google_service_account_info_falls_back_when_file_missing(monkeypatch):
+    monkeypatch.setattr(tools.settings, "GOOGLE_SA_JSON_FILE", "/missing/path.json")
+    monkeypatch.setattr(tools.settings, "GOOGLE_SA_JSON", '{"client_email":"demo@example.com"}')
+
+    result = tools.google_service_account_info()
+
+    assert result["client_email"] == "demo@example.com"
+
+
 def test_first_contact_value_skips_empty_list_items():
     assert tools.first_contact_value(["", None, "+123-456-7890"]) == "+123-456-7890"
 
