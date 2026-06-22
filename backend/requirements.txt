@@ -1,0 +1,31 @@
+# Core dependencies
+fastapi>=0.111.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.0
+pydantic-settings
+
+# LangGraph & LangChain
+langgraph
+langgraph-checkpoint-postgres
+psycopg[binary,pool]
+langchain
+langchain-core
+langchain-google-genai
+langchain-anthropic
+anthropic
+
+# External APIs (free tiers: Gemini, Google Sheets, WhatsApp, Cloudinary)
+google-genai
+gspread
+google-auth
+google-auth-oauthlib
+cloudinary
+httpx
+
+# Utilities
+python-multipart
+python-dotenv
+
+# Optional: For development
+pytest
+pytest-asyncio
