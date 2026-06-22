@@ -250,7 +250,7 @@ def test_notify_whatsapp_returns_message_id(monkeypatch):
     monkeypatch.setattr(tools.settings, "WHATSAPP_TOKEN", "token")
     monkeypatch.setattr(tools.settings, "MANAGER_PHONE_NUMBER", "+91-123-456-7890")
     monkeypatch.setattr(tools.settings, "WHATSAPP_MESSAGE_MODE", "text")
-    monkeypatch.setattr(tools.settings, "WHATSAPP_TEMPLATE_NAME", "hello_world")
+    monkeypatch.setattr(tools.settings, "WHATSAPP_TEMPLATE_NAME", "new_contact_alert")
     monkeypatch.setattr(tools.settings, "WHATSAPP_TEMPLATE_LANGUAGE", "en_US")
     monkeypatch.setattr("httpx.Client", lambda: http_client)
 
@@ -267,6 +267,51 @@ def test_notify_whatsapp_returns_message_id(monkeypatch):
     payload = http_client.calls[0]["kwargs"]["json"]
     assert payload["type"] == "text"
     assert payload["text"]["body"] == "New contact logged: Ada from Example"
+
+
+def test_notify_whatsapp_template_mode_uses_template(monkeypatch):
+    http_client = FakeHttpClient(
+        SimpleNamespace(
+            status_code=200,
+            json=lambda: {
+                "contacts": [{"wa_id": "911234567890"}],
+                "messages": [{"id": "wamid.test"}],
+            },
+        )
+    )
+    monkeypatch.setattr(tools.settings, "WHATSAPP_PHONE_NUMBER_ID", "phone-id")
+    monkeypatch.setattr(tools.settings, "WHATSAPP_TOKEN", "token")
+    monkeypatch.setattr(tools.settings, "MANAGER_PHONE_NUMBER", "+91-123-456-7890")
+    monkeypatch.setattr(tools.settings, "WHATSAPP_MESSAGE_MODE", "template")
+    monkeypatch.setattr(tools.settings, "WHATSAPP_TEMPLATE_NAME", "new_contact_alert")
+    monkeypatch.setattr(tools.settings, "WHATSAPP_TEMPLATE_LANGUAGE", "en_US")
+    monkeypatch.setattr("httpx.Client", lambda: http_client)
+
+    result = tools.notify_whatsapp.invoke(
+        {"contact_name": "Ada", "company": "Example"}
+    )
+
+    assert result["status"] == "sent"
+    assert result["mode"] == "template"
+    assert result["template"] == "new_contact_alert"
+    payload = http_client.calls[0]["kwargs"]["json"]
+    assert payload["type"] == "template"
+    assert payload["template"]["name"] == "new_contact_alert"
+
+
+def test_notify_whatsapp_rejects_sample_template(monkeypatch):
+    monkeypatch.setattr(tools.settings, "WHATSAPP_PHONE_NUMBER_ID", "phone-id")
+    monkeypatch.setattr(tools.settings, "WHATSAPP_TOKEN", "token")
+    monkeypatch.setattr(tools.settings, "MANAGER_PHONE_NUMBER", "+91-123-456-7890")
+    monkeypatch.setattr(tools.settings, "WHATSAPP_MESSAGE_MODE", "template")
+    monkeypatch.setattr(tools.settings, "WHATSAPP_TEMPLATE_NAME", "hello_world")
+    monkeypatch.setattr(tools.settings, "WHATSAPP_TEMPLATE_LANGUAGE", "en_US")
+
+    result = tools.notify_whatsapp.invoke(
+        {"contact_name": "Ada", "company": "Example"}
+    )
+
+    assert "approved template" in result["error"].lower()
 
 
 def test_audio_transcription_uses_gemini(monkeypatch, tmp_path):
@@ -296,6 +341,55 @@ def test_audio_transcription_retries_temporary_gemini_overload(monkeypatch, tmp_
 
     assert result == "Retry worked."
     assert len(models.calls) == 2
+
+
+def test_audio_transcription_retries_short_gemini_rate_limit(monkeypatch, tmp_path):
+    models = FakeModels(
+        [
+            RuntimeError(
+                "429 RESOURCE_EXHAUSTED. Please retry in 12.9750747s. "
+                "{'details': [{'@type': 'type.googleapis.com/google.rpc.RetryInfo', "
+                "'retryDelay': '12s'}]}"
+            ),
+            "Retry worked.",
+        ]
+    )
+    client = SimpleNamespace(models=models)
+    sleep_calls = []
+    audio = tmp_path / "note.wav"
+    audio.write_bytes(b"audio")
+    monkeypatch.setattr(tools, "get_gemini_client", lambda: client)
+    monkeypatch.setattr(tools, "file_part", lambda path, data: (path, data))
+    monkeypatch.setattr(tools.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    result = tools.transcribe_voice_note.invoke({"audio_path": str(audio)})
+
+    assert result == "Retry worked."
+    assert len(models.calls) == 2
+    assert sleep_calls == [12.9750747]
+
+
+def test_card_extraction_does_not_retry_daily_gemini_quota(monkeypatch, tmp_path):
+    models = FakeModels(
+        [
+            RuntimeError(
+                "429 RESOURCE_EXHAUSTED. Quota exceeded for metric: "
+                "generativelanguage.googleapis.com/generate_content_free_tier_requests, "
+                "quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+            ),
+            '{"name":"Ada"}',
+        ]
+    )
+    client = SimpleNamespace(models=models)
+    image = tmp_path / "card.png"
+    image.write_bytes(b"image")
+    monkeypatch.setattr(tools, "get_gemini_client", lambda: client)
+    monkeypatch.setattr(tools, "file_part", lambda path, data: (path, data))
+
+    result = tools.extract_card_details.invoke({"image_path": str(image)})
+
+    assert "RESOURCE_EXHAUSTED" in result["error"]
+    assert len(models.calls) == 1
 
 
 def test_webm_voice_note_is_sent_as_audio(monkeypatch, tmp_path):

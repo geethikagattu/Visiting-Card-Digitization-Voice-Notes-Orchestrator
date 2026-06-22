@@ -110,9 +110,9 @@ Voice notes are uploaded to Cloudinary and the returned `secure_url` is saved in
 2. Create a Business App and enable **WhatsApp Cloud API**
 3. Get a **Phone Number ID** and **Permanent Access Token**
 4. Set environment variables in `.env`
-5. Keep `WHATSAPP_MESSAGE_MODE=text` to send custom contact alerts like `New contact logged: Ada from Example`
+5. Keep `WHATSAPP_MESSAGE_MODE=template` for outbound alerts and set `WHATSAPP_TEMPLATE_NAME` to an approved template such as `new_contact_alert`
 
-If you set `WHATSAPP_MESSAGE_MODE=template` with `WHATSAPP_TEMPLATE_NAME=hello_world`, Meta will send the default sample message instead of your contact alert.
+Do not use Meta's stock `hello_world` template for the production alert; it is only a sample and will not carry your contact details.
 
 ### 6. Persistent LangGraph Checkpointing
 

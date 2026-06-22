@@ -14,6 +14,8 @@ from src.graph.agent import get_compiled_graph
 from src.graph.tools import (
     check_duplicate,
     extract_card_details,
+    gemini_retry_delay_seconds,
+    is_gemini_quota_error,
     log_contact,
     notify_whatsapp,
     transcribe_voice_note,
@@ -108,6 +110,18 @@ def tool_error_detail(result: dict) -> str:
             return f"{error}: {response}"
         return error
     return f"Tool failed without an error message: {result}"
+
+
+def gemini_error_response(detail: str) -> HTTPException:
+    """Map Gemini quota errors to a client-visible rate-limit response."""
+    if not is_gemini_quota_error(detail):
+        return HTTPException(status_code=502, detail=detail)
+
+    headers = {}
+    retry_delay = gemini_retry_delay_seconds(detail)
+    if retry_delay is not None:
+        headers["Retry-After"] = str(int(retry_delay))
+    return HTTPException(status_code=429, detail=detail, headers=headers)
 
 
 # File upload helper
@@ -220,9 +234,8 @@ async def upload_image(session_id: str, image: UploadFile = File(...)):
         
         card_data = extract_card_details.invoke({"image_path": image_path})
         if card_data.get("error"):
-            raise HTTPException(
-                status_code=502,
-                detail=f"Gemini card extraction failed: {card_data['error']}",
+            raise gemini_error_response(
+                f"Gemini card extraction failed: {card_data['error']}"
             )
 
         duplicate = check_duplicate.invoke(
@@ -307,7 +320,7 @@ async def upload_audio(session_id: str, audio: UploadFile = File(...)):
 
         transcript = transcribe_voice_note.invoke({"audio_path": audio_path})
         if transcript.startswith("Transcription error:"):
-            raise HTTPException(status_code=502, detail=transcript)
+            raise gemini_error_response(transcript)
 
         audio_url = await upload_to_cloudinary(audio_path, session_id)
 

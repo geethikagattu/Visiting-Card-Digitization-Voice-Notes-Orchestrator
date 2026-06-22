@@ -112,6 +112,32 @@ def test_image_upload_reports_empty_tool_error(monkeypatch):
     assert "Tool failed without an error message" in response.json()["detail"]
 
 
+def test_image_upload_reports_gemini_quota_as_rate_limit(monkeypatch):
+    session_id = client.post("/chat/session").json()["session_id"]
+    monkeypatch.setattr(
+        server,
+        "extract_card_details",
+        fake_tool(
+            {
+                "error": (
+                    "429 RESOURCE_EXHAUSTED. Quota exceeded for metric: "
+                    "generativelanguage.googleapis.com/generate_content_free_tier_requests. "
+                    "Please retry in 12.9750747s."
+                )
+            }
+        ),
+    )
+
+    response = client.post(
+        f"/chat/{session_id}/upload-image",
+        files={"image": ("card.jpg", b"fake image", "image/jpeg")},
+    )
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "12"
+    assert "Gemini card extraction failed" in response.json()["detail"]
+
+
 def test_audio_requires_a_card_first():
     session_id = client.post("/chat/session").json()["session_id"]
     response = client.post(

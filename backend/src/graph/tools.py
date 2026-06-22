@@ -85,7 +85,37 @@ def error_message(error: Exception) -> str:
 
 def is_retryable_gemini_error(message: str) -> bool:
     """Return True for temporary Gemini capacity/service errors."""
-    return any(token in message for token in ["503", "UNAVAILABLE", "high demand", "temporarily"])
+    if any(token in message for token in ["503", "UNAVAILABLE", "high demand", "temporarily"]):
+        return True
+    return is_gemini_quota_error(message) and not is_gemini_daily_quota_error(message)
+
+
+def is_gemini_quota_error(message: str) -> bool:
+    """Return True when Gemini reports a quota or rate-limit failure."""
+    return any(
+        token in message
+        for token in ["429", "RESOURCE_EXHAUSTED", "Quota exceeded", "quota exceeded"]
+    )
+
+
+def is_gemini_daily_quota_error(message: str) -> bool:
+    """Return True for Gemini quota errors that are unlikely to clear with a short retry."""
+    return is_gemini_quota_error(message) and any(
+        token in message for token in ["PerDay", "per day", "requests per day"]
+    )
+
+
+def gemini_retry_delay_seconds(message: str) -> float | None:
+    """Extract Gemini's suggested retry delay from an exception message."""
+    patterns = [
+        r"retry in (?P<seconds>\d+(?:\.\d+)?)s",
+        r"retryDelay['\"]?:\s*['\"](?P<seconds>\d+(?:\.\d+)?)s",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, message, re.IGNORECASE)
+        if match:
+            return float(match.group("seconds"))
+    return None
 
 
 def generate_content_with_retry(**kwargs):
@@ -99,7 +129,8 @@ def generate_content_with_retry(**kwargs):
             last_error = message
             if attempt == 2 or not is_retryable_gemini_error(message):
                 raise
-            time.sleep(1.5 * (attempt + 1))
+            retry_delay = gemini_retry_delay_seconds(message)
+            time.sleep(retry_delay if retry_delay is not None else 1.5 * (attempt + 1))
     raise RuntimeError(last_error or "Gemini request failed")
 
 
@@ -415,18 +446,25 @@ def notify_whatsapp(contact_name: str, company: str) -> dict:
         phone_number_id = settings.WHATSAPP_PHONE_NUMBER_ID
         whatsapp_token = settings.WHATSAPP_TOKEN
         manager_phone = whatsapp_recipient(settings.MANAGER_PHONE_NUMBER)
-        
+
         if not all([phone_number_id, whatsapp_token, manager_phone]):
             return {"error": "Missing WhatsApp credentials in environment"}
-        
+
         message_text = f"New contact logged: {contact_name} from {company}"
         message_mode = settings.WHATSAPP_MESSAGE_MODE.strip().lower()
-        template_name = settings.WHATSAPP_TEMPLATE_NAME
+        template_name = settings.WHATSAPP_TEMPLATE_NAME.strip()
         template_language = settings.WHATSAPP_TEMPLATE_LANGUAGE
-        
+
         url = f"https://graph.facebook.com/v25.0/{phone_number_id}/messages"
         headers = {"Authorization": f"Bearer {whatsapp_token}"}
         if message_mode == "template":
+            if not template_name or template_name.lower() == "hello_world":
+                return {
+                    "error": (
+                        "Set WHATSAPP_TEMPLATE_NAME to a real approved template. "
+                        "The sample hello_world template is not suitable for production alerts."
+                    )
+                }
             payload = {
                 "messaging_product": "whatsapp",
                 "to": manager_phone,
@@ -434,14 +472,30 @@ def notify_whatsapp(contact_name: str, company: str) -> dict:
                 "template": {
                     "name": template_name,
                     "language": {"code": template_language},
+                    "components": [
+                        {
+                            "type": "body",
+                            "parameters": [
+                                {"type": "text", "text": contact_name},
+                                {"type": "text", "text": company},
+                            ],
+                        }
+                    ],
                 },
             }
-        else:
+        elif message_mode == "text":
             payload = {
                 "messaging_product": "whatsapp",
                 "to": manager_phone,
                 "type": "text",
                 "text": {"preview_url": False, "body": message_text},
+            }
+        else:
+            return {
+                "error": (
+                    f"Unsupported WHATSAPP_MESSAGE_MODE: {settings.WHATSAPP_MESSAGE_MODE!r}. "
+                    "Use 'text' or 'template'."
+                )
             }
         
         with httpx.Client() as client:
