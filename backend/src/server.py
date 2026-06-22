@@ -49,6 +49,17 @@ if cors_origins:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+else:
+    # Keep the deployed frontend working even when CORS_ORIGINS is not set.
+    # The app does not use browser credentials, so a permissive CORS policy is
+    # acceptable for this demo/deployment setup.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Initialize graph with the configured LangGraph checkpointer.
 checkpointer = build_checkpointer()
