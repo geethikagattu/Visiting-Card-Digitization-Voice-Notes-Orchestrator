@@ -32,7 +32,8 @@ type RequestResponse = {
 }
 
 const STORAGE_KEY = 'visiting-card-chat-sessions'
-const API_BASE_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
+const DEFAULT_API_BASE_URL = 'https://visiting-card-digitization-voice-notes.onrender.com'
+const API_BASE_URL = (import.meta.env.VITE_API_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, '')
 
 function apiUrl(path: string) {
   return `${API_BASE_URL}${path}`
@@ -40,7 +41,7 @@ function apiUrl(path: string) {
 
 function backendConnectionHint(message: string) {
   return /Backend is unavailable|Could not create a session|Failed to fetch|NetworkError/i.test(message)
-    ? ' Make sure the backend is running on port 8000.'
+    ? ` Make sure the backend is reachable at ${API_BASE_URL || DEFAULT_API_BASE_URL}.`
     : ''
 }
 
