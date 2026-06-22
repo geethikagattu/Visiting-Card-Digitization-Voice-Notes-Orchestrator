@@ -165,7 +165,7 @@ def sheet_records(sheet) -> list[dict]:
     if not hasattr(sheet, "get"):
         return sheet.get_all_records()
 
-    values = sheet.get(pad_values=True)
+    values = sheet_values(sheet)
     if not values or values == [[]]:
         return []
 
@@ -186,6 +186,25 @@ def sheet_records(sheet) -> list[dict]:
             record[header] = row[index] if index < len(row) else ""
         records.append(record)
     return records
+
+
+def sheet_values(sheet) -> list[list[Any]]:
+    """Return raw worksheet values with padded rows when the client supports it."""
+    if hasattr(sheet, "get"):
+        return sheet.get(pad_values=True)
+    return []
+
+
+def row_has_duplicate_value(row_values: list[Any], norm_email: str, norm_phone_suffix: str) -> str:
+    """Find a duplicate by scanning all cell values in a row."""
+    for value in row_values:
+        cell = first_contact_value(value)
+        if norm_email and normalize_email(cell) == norm_email:
+            return "email"
+        digits = phone_digits(cell)
+        if norm_phone_suffix and digits.endswith(norm_phone_suffix):
+            return "phone"
+    return ""
 
 
 @tool
@@ -289,6 +308,17 @@ def check_duplicate(email: Any = "", phone: Any = "") -> dict:
                     "row_index": idx,
                     "matched_field": "email" if norm_email and norm_email == row_email else "phone",
                     "existing_row": row,
+                }
+
+        # Fallback for messy sheets with missing/incorrect headers: scan every cell.
+        for idx, values in enumerate(sheet_values(sheet)[1:], start=2):
+            matched_field = row_has_duplicate_value(values, norm_email, norm_phone_suffix)
+            if matched_field:
+                return {
+                    "is_duplicate": True,
+                    "row_index": idx,
+                    "matched_field": matched_field,
+                    "existing_row": values,
                 }
         
         return {"is_duplicate": False, "row_index": None, "matched_field": None}
