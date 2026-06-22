@@ -1,4 +1,3 @@
-```md
 # Visiting Card Digitization & Voice Notes Orchestrator
 
 An end-to-end system for digitizing visiting cards, logging contacts into Google Sheets, detecting duplicates, sending WhatsApp alerts, and attaching voice notes to the same contact record.
